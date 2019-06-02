@@ -28,17 +28,20 @@ import org.sonar.api.batch.rule.Severity;
 
 public class GlobalReport {
   private final boolean tryReportIssuesInline;
+  private final boolean failOnMajorErrors;
   private int[] newIssuesBySeverity = new int[Severity.values().length];
   private int extraIssueCount = 0;
   private int maxGlobalReportedIssues;
   private final ReportBuilder builder;
 
-  public GlobalReport(MarkDownUtils markDownUtils, boolean tryReportIssuesInline) {
-    this(markDownUtils, tryReportIssuesInline, GitHubPluginConfiguration.MAX_GLOBAL_ISSUES);
+  public GlobalReport(MarkDownUtils markDownUtils, boolean tryReportIssuesInline, boolean failOnMajorErrors) {
+    this(markDownUtils, tryReportIssuesInline, failOnMajorErrors, GitHubPluginConfiguration.MAX_GLOBAL_ISSUES);
   }
 
-  public GlobalReport(MarkDownUtils markDownUtils, boolean tryReportIssuesInline, int maxGlobalReportedIssues) {
+  public GlobalReport(MarkDownUtils markDownUtils, boolean tryReportIssuesInline, boolean failOnMajorErrors,
+    int maxGlobalReportedIssues) {
     this.tryReportIssuesInline = tryReportIssuesInline;
+    this.failOnMajorErrors = failOnMajorErrors;
     this.maxGlobalReportedIssues = maxGlobalReportedIssues;
     this.builder = new MarkDownReportBuilder(markDownUtils);
   }
@@ -99,6 +102,12 @@ public class GlobalReport {
   }
 
   public GHCommitState getStatus() {
+    if (failOnMajorErrors) {
+      return (newIssues(Severity.BLOCKER) > 0 || newIssues(Severity.CRITICAL) > 0 || newIssues(Severity.MAJOR) > 0)
+        ? GHCommitState.ERROR
+        : GHCommitState.SUCCESS;
+    }
+
     return (newIssues(Severity.BLOCKER) > 0 || newIssues(Severity.CRITICAL) > 0) ? GHCommitState.ERROR : GHCommitState.SUCCESS;
   }
 
@@ -120,9 +129,17 @@ public class GlobalReport {
     if (newIssues > 0) {
       sb.append(newIssues).append(" issue" + (newIssues > 1 ? "s" : "")).append(",");
       int newCriticalOrBlockerIssues = newIssues(Severity.BLOCKER) + newIssues(Severity.CRITICAL);
+      if (failOnMajorErrors) {
+        newCriticalOrBlockerIssues += newIssues(Severity.MAJOR);
+      }
       if (newCriticalOrBlockerIssues > 0) {
         appendNewIssuesInline(sb, Severity.CRITICAL);
         appendNewIssuesInline(sb, Severity.BLOCKER);
+        if (failOnMajorErrors) {
+          appendNewIssuesInline(sb, Severity.MAJOR);
+        }
+      } else if (failOnMajorErrors) {
+        sb.append(" no major, criticals or blockers");
       } else {
         sb.append(" no criticals or blockers");
       }

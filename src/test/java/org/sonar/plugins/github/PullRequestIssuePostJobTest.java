@@ -36,7 +36,6 @@ import org.sonar.api.batch.postjob.issue.PostJobIssue;
 import org.sonar.api.batch.rule.Severity;
 import org.sonar.api.config.PropertyDefinition;
 import org.sonar.api.config.PropertyDefinitions;
-import org.sonar.api.config.Settings;
 import org.sonar.api.config.internal.MapSettings;
 import org.sonar.api.rule.RuleKey;
 import org.sonar.api.utils.System2;
@@ -56,11 +55,12 @@ public class PullRequestIssuePostJobTest {
   private PullRequestIssuePostJob pullRequestIssuePostJob;
   private PullRequestFacade pullRequestFacade;
   private PostJobContext context;
+  private MapSettings settings;
 
   @Before
   public void prepare() throws Exception {
     pullRequestFacade = mock(PullRequestFacade.class);
-    MapSettings settings = new MapSettings(new PropertyDefinitions(PropertyDefinition.builder(CoreProperties.SERVER_BASE_URL)
+    settings = new MapSettings(new PropertyDefinitions(PropertyDefinition.builder(CoreProperties.SERVER_BASE_URL)
       .name("Server base URL")
       .description("HTTP URL of this SonarQube server, such as <i>http://yourhost.yourdomain/sonar</i>. This value is used i.e. to create links in emails.")
       .category(CoreProperties.CATEGORY_GENERAL)
@@ -199,6 +199,23 @@ public class PullRequestIssuePostJobTest {
 
   @Test
   public void testPullRequestAnalysisWithNewIssuesNoBlockerNorCritical() throws MalformedURLException {
+    settings.setProperty(GitHubPlugin.GITHUB_FAIL_ON_MAJOR_ERROR, true);
+    DefaultInputFile inputFile1 = new TestInputFileBuilder("foo", "src/Foo.php").build();
+    PostJobIssue newIssue = newMockedIssue("foo:src/Foo.php", inputFile1, 1, Severity.MAJOR, true, "msg1");
+    when(pullRequestFacade.getGithubUrl(inputFile1, 1)).thenReturn(new URL("http://github/blob/abc123/src/Foo.php#L1"));
+
+    when(context.issues()).thenReturn(Arrays.<PostJobIssue>asList(newIssue));
+    when(pullRequestFacade.hasFile(inputFile1)).thenReturn(true);
+    when(pullRequestFacade.hasFileLine(inputFile1, 1)).thenReturn(true);
+
+    pullRequestIssuePostJob.execute(context);
+
+    verify(pullRequestFacade).createOrUpdateSonarQubeStatus(GHCommitState.ERROR, "SonarQube reported 1 issue, with 1 major");
+  }
+
+  @Test
+  public void testPullRequestAnalysisWithNewIssuesNoBlockerNorCritical1() throws MalformedURLException {
+    settings.setProperty(GitHubPlugin.GITHUB_FAIL_ON_MAJOR_ERROR, false);
     DefaultInputFile inputFile1 = new TestInputFileBuilder("foo", "src/Foo.php").build();
     PostJobIssue newIssue = newMockedIssue("foo:src/Foo.php", inputFile1, 1, Severity.MAJOR, true, "msg1");
     when(pullRequestFacade.getGithubUrl(inputFile1, 1)).thenReturn(new URL("http://github/blob/abc123/src/Foo.php#L1"));
